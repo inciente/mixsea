@@ -127,7 +127,7 @@ class Ensemble:
         
         self.ind1 = ind1; 
         self.ind2 = ind2; 
-        self.beam = beam;
+        self.beam = beam;	
     
     self.Nens = len(self.ind1); # number of ensembles in a given instance of this class
     # self.middle = int( self.ind1/2 + self.ind2/2 ); # index to reference middle point
@@ -136,12 +136,13 @@ class Ensemble:
     self.time = aqdp[0]['time'][0][int( self.ind1/2 + self.ind2/2 )]; 
     self.p = aqdp[0]['pressure'][0][int( self.ind1/2 + self.ind2/2 )];
     
+    self.procsetup = procsetup; # dictionary including all parameters to use in processing
     
     # List of all 
     
     # Make a dictionary vels = {'v1':pd.DataFrame, 'v2':pd.DataFrame} and use to reference vels within class
     
-    def kSpectrum(allvels, dl, downax = 0):
+    def kSpectrum(self, procsetup):
         
         Spectra = dict();
             

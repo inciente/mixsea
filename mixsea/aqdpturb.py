@@ -5,7 +5,8 @@ import pandas as pd
 from scipy import signal
 from scipy.stats import chi2, linregress
 from scipy.optimize import minimize_scalar, curve_fit
-from scipy.interpolate import UnivariateSpline
+from scipy.interpolate import UnivariateSpline;
+import time
 
 
 def buildraw(path2file):
@@ -150,7 +151,7 @@ class Ensemble:
         return wvel
     
     def allspectra(self, detrend=False):
-        u2spec = self.allv(); u2spec = u2spec.values;
+        u2spec, checkers = self.allv(); 
         u2spec = u2spec - np.expand_dims( np.nanmean(u2spec, axis=1), axis=1);
         if detrend:
             u2spec = signal.detrend(u2spec,axis=1);    
@@ -165,7 +166,7 @@ class Ensemble:
         spectrum2 = normvar*spectrum; # variance of flow
         origvar = np.expand_dims(np.nansum( spectrum*dk, axis=1), axis=1);
         spectrum= spectrum2/origvar; # normalize by integral
-        return np.real(spectrum)
+        return np.real(spectrum), checkers
     
     def Veron(self, detrend = False ):
         # Compute the noise spectrum
@@ -193,12 +194,13 @@ class Ensemble:
                 DIST = chi2.pdf( DegFred * phihere[kk] / Sth[kk], df = DegFred)
                 cost += np.log( (DegFred/Sth[kk]) * DIST );
             return cost
-        
-        spectra = self.allspectra(detrend);
+        start_time = time.time()
+        spectra, checkens = self.allspectra(detrend);
+        print("--- %s seconds for spectra ---" % (time.time() - start_time))
         
         def MLEfit(epstrials):
             Ntrials = len(epstrials);
-            self.veroneps['values'] = np.zeros( (len(self.time), 1) );
+            self.veroneps['epsilon'] = np.zeros( (len(self.time), 1) );
             self.veroneps['cost'] = np.zeros( (len( self.time), Ntrials) );
             self.veroneps['curvvar'] = np.zeros( (len(self.time),1) );
             self.veroneps['varspec'] = np.empty( (len(self.time), 1) );    
@@ -210,7 +212,7 @@ class Ensemble:
                 if self.ind1[kk] == self.ind2[kk]: 
                     continue # empty ensemble
 #                spec_here = self.kspectrum( kk , detrend ); # mean obs spectrum
-                spec_here = np.nanmean(spectra[self.all2ind==kk,:],axis=0);
+                spec_here = np.nanmean(spectra[checkens==kk,:],axis=0);
     
                 # ----- Following block may be substituted by optimizing function or univspline in the future 
                 costtrials = [CostFunc(testphis, jj, spec_here) for jj in range(Ntrials)];
@@ -220,7 +222,7 @@ class Ensemble:
                 maxcf = max(costtrials); maxcf = list(costtrials).index(maxcf);
                 if maxcf in [0, Ntrials-1]:
                     continue # make sure it's local max
-                self.veroneps['values'][kk] = epstrials[maxcf];
+                self.veroneps['epsilon'][kk] = epstrials[maxcf];
                 # ------
                 
                 # All these can be saved for a special function
@@ -234,8 +236,8 @@ class Ensemble:
                 
 #        eps['MAD'] = np.empty( (len(self.time), 1)); # for flags
         
-        MLEfit(10**np.linspace(-10,-4,50));
-        self.veroneps['values'][self.veroneps['values'] == 0] = np.nan
+        MLEfit(10**np.linspace(-9,-4,25));
+        self.veroneps['epsilon'][self.veroneps['epsilon'] == 0] = np.nan
             # --------- I think this is how the calculation works overall. Need to solve format issues later. 
             
             # Offer to plt.imshow an class instance that represents the cost function plot

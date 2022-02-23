@@ -23,6 +23,35 @@ def buildraw(path2file):
 	# Measured variables get their own class instances
     aqdp['v1'] = VelMeas( pd.DataFrame( data = matfile[0]['v1'][0], index = aqdp['time']), aqdp['dl']);
 
+class grid:
+	
+    def __init__(self, timevec='none', path2file='none'): 
+        if path2file == 'none':
+            self.path2file = '/media/mydrive/AQDP/TTIDE_M5_sn107_gridded.mat';
+        # Load matfile featuring aqdp data gridded onto depth and time coordinates.
+        matfile = sio.loadmat(self.path2file);
+        matfile = matfile['MPall'];
+        datgrid = dict();
+        self.yday = np.squeeze(matfile[0]['yday'][0]);
+        valcheck = ~np.isnan(self.yday); 
+        self.yday = self.yday[valcheck]
+        
+        # Store properties with no time dimension
+        self.p = np.squeeze(matfile[0]['p'][0]); 
+        self.z = np.squeeze(matfile[0]['z'][0]);
+        self.info = np.squeeze(matfile[0]['info'][0]);
+        vars2get = ["t","s","u","v","w"];
+        for item in vars2get:
+            values = np.squeeze( matfile[0][item][0] ); 
+            datgrid[item] = values[:,valcheck];
+       
+        self.gridded = datgrid;
+	
+	def cutvar(self, var, limits):
+		timecheck = self.yday > limits['t0'] and self.yday < limits['t1'];
+		return self.gridded[var][:,timecheck];
+
+
 # Make a class that stores aqdp data, allowing to detrend and take spectra as needed
 class VelMeas:
     

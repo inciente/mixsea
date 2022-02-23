@@ -8,7 +8,6 @@ from scipy.optimize import minimize_scalar, curve_fit
 from scipy.interpolate import UnivariateSpline;
 import time
 
-
 def buildraw(path2file):
     matfile = sio.loadmat(path2file)
     matfile = matfile['aqdp']; 
@@ -17,7 +16,7 @@ def buildraw(path2file):
     aqdp=dict(); 
     
     # Coordinates
-    aqdp['time'] = np.squeeze( matfile[0]['yday'][0] );
+    aqdp['yday'] = np.squeeze( matfile[0]['yday'][0] );
     aqdp['pressure'] = np.squeeze( matfile[0]['p'][0]);
     aqdp['dl'] = 0.0221; aqdp['dt'] = np.mean( np.diff(aqdp['time'], n=1)*24*3600 );
 
@@ -85,58 +84,55 @@ class Ensemble:
     # Inputs: np.array that identifies the indices to a set of ensembles. 
     # all calculations aboard
 
-    def __init__(self, slow_time, slow_dt, beam = 'v1'):
+    def __init__(self, slow_time, slow_dt, vel_dict, beam = 'v1'):
         
         self.time = slow_time; 
         self.dt = slow_dt; 
-        self.ind1 = np.array([np.searchsorted(aqdp['time'], self.time[kk]- self.dt/2) \
-                              for kk in range(len(self.time))]); 
-        self.ind2 = np.array([np.searchsorted(aqdp['time'], self.time[kk]+ self.dt/2) \
-                              for kk in range(len(self.time))]); 
-        
-        self.all2ind = np.ones( (len(aqdp['time']),1) )*(-999);
-        
+        self.vels=vel_dict;
+        self.ind1, self.ind2 = self.lim_indices(); # indices of ensemble limits
         self.beam = beam; 
-        self.p = np.zeros( (len(self.time),1) );
+        self.p, self.all2ind = self.find_mean_p();
+
         self.veroneps = dict(); self.wileseps = dict(); 
-        self.wileseps['psamples'] = [aqdp[self.beam].nbins - dr for dr in range(1, aqdp[self.beam].nbins ) ];
-        
-        items2drop = []; 
-        # ----   Mean in the middle of each ensemble
+        self.wileseps['psamples'] = [self.vels[self.beam].nbins - dr \
+                          for dr in range(1, self.vels[self.beam].nbins ) ];
+    
+    def find_mean_p(self):
+        ''' Find mean pressure within each ensemble (plist), and 
+        assign correspondence indices to each profile in the raw data (all2ind)'''
+        plist = np.zeros( (len(self.time),1));
+        all2ind = np.ones( (len(self.vels['yday']),1))*(-999)
         for kk in range(len(self.time)):
             if self.ind1[kk] < self.ind2[kk]:
-                self.p[kk] = np.nanmean( aqdp['pressure'][self.ind1[kk]:self.ind2[kk]]);
-                self.all2ind[self.ind1[kk]:self.ind2[kk]] = kk; 
+                plist[kk] = np.nanmean( \
+                        self.vels['pressure'][self.ind1[kk]:self.ind2[kk]] )
+                all2ind[self.ind1[kk]:self.ind2[kk]] = kk;
             else:
-                self.p[kk] = np.nan;
+                plist[kk] = np.nan;
+        return plist, all2ind
 
-                #items2drop = np.append(items2drop, kk );
-        #items2drop = [int(kk) for kk in items2drop];
-        #self.ind1 = np.delete( self.ind1, items2drop);
-        #self.ind2 = np.delete( self.ind2, items2drop);
-        #self.p = np.delete( self.p, items2drop);
-        #self.time = np.delete( self.time, items2drop);
+    def lim_indices(self):
+        # Find indices where each ensemble starts or ends
+        offset = self.dt/2
+        ind1 = np.array( [np.searchsorted(self.vels['yday'], 
+                  self.time[kk] - offset ) for kk in range(len(self.time)) ] )
+        ind2 = np.array( [np.searchsorted(self.vels['yday'],
+                self.time[kk] + offset ) for kk in range(len(self.time)) ] );
+        return ind1, ind2
+
     def ensv(self, ens_index):
         # measured velocities within a single ensemble
-        return aqdp[self.beam].v.iloc[self.ind1[ens_index]:self.ind2[ens_index],:];
+        v = self.vels[self.beam].v;
+        return v.iloc[ self.ind1[ens_index]:self.ind2[ens_index] , : ];
     
     def allv(self):
-        # Make array including all the velocity profiles used within an ensemble object
+        # Make array including all velocity profiles within ensemble set
         vels = aqdp[self.beam].v.loc[self.all2ind>-1,:]; 
         checker = self.all2ind[self.all2ind > -1]; 
-        return vels, checker ;
-
-        #objv = np.empty( (0, aqdp[self.beam].nbins) );
-        #all2ind = np.empty( (0) );
-        #for ii in range(len(self.time)):
-        #    vhere = self.ensv(ii);
-        #    objv = np.vstack((objv,vhere));
-        #    all2ind = np.hstack( (all2ind, np.repeat(ii, vhere.shape[0]) ) );
-        #self.all2ind = all2ind
-#       return objv
-
+        return vels, checker;
         
     def dpdt(self):
+        aqdp = self.vels;
         # Get all aqdp time indices
         wvel = np.zeros( ( len(self.time) , ) );
         for kk in range(len(self.time)):
@@ -151,8 +147,11 @@ class Ensemble:
         return wvel
     
     def allspectra(self, detrend=False):
+        aqdp = self.vels
         u2spec, checkers = self.allv(); 
+        print(u2spec.shape)
         u2spec = u2spec - np.expand_dims( np.nanmean(u2spec, axis=1), axis=1);
+        
         if detrend:
             u2spec = signal.detrend(u2spec,axis=1);    
         normvar = np.expand_dims( np.var(u2spec, axis=1), axis=1 );
@@ -169,6 +168,7 @@ class Ensemble:
         return np.real(spectrum), checkers
     
     def Veron(self, detrend = False ):
+        aqdp = self.vels;
         # Compute the noise spectrum
         PhiNoise = (0.55*aqdp[self.beam].std)**2 / (max(aqdp[self.beam].wvnum)-min(aqdp[self.beam].wvnum));
         DegFred = 2*np.mean( self.ind2 - self.ind1);
@@ -330,4 +330,15 @@ class Ensemble:
         (axe).legend( legtext )
         (axe).grid( True, which = 'both');
         
+       
+
+class Veron:
+    def __init__(self, ensemble):
+        self.ens = ensemble; # imports time, pressure, velocities, and refs
+        self.eps = [];
+        self.spectra = [];
+
+    def all_spectra(self, beam='v1'): 
+        vels = self.ens.vels[beam]; 
         
+

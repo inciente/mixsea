@@ -3,7 +3,12 @@ import numpy as np
 
 
 def nan_eps_overturn(
-    depth, t, SP, lon, lat, **kwargs,
+    depth,
+    t,
+    SP,
+    lon,
+    lat,
+    **kwargs,
 ):
     """
     Calculate turbulent dissipation based on the Thorpe scale method attempting to deal NaN values in the input data.
@@ -82,48 +87,56 @@ def eps_overturn(
     Parameters
     ----------
     depth : array-like
-        Depth [m]
+            Depth [m]
     t : array-like
-        In-situ temperature [ITS90, °C]
+            In-situ temperature [ITS90, °C]
     SP : float or array-like
-        Salinity [PSU]. Can be a single constant value. This may be convenient if only temperature data
-        are available.
+            Salinity [PSU]. Can be a single constant value. This may be convenient if only temperature data
+            are available.
     lon : float
-        Longitude of observation
+            Longitude of observation
     lat : float
-        Latitude of observation
+            Latitude of observation
     dnoise : float, optional
-        Noise level of density [kg/m^3]. Default is 5e-4.
+            Noise level of density [kg/m^3] or conservative temperature [°C], depending on overturns_from_CT. Default is 5e-4.
     alpha : float, optional
-        Constant of proportionality between Thorpe and Ozmidov scale. Default is 0.95.
+            Ratio of Ozmidov scale to Thorpe scale, alpha = Lo/Lt. Default is 0.95. Care must be taken to choose
+            a value appropriate for the setting, e.g. Dillon 1982 [1]_, Ferron et al. 1998 [2]_.
+            Convert to Thorpe 1977 [3]_ conventions with C0 = alpha**2.
+            Not to be confused with alpha in Equation 4 from Thorpe 1977, which is the inverse of our alpha.
     Roc : float, optional
-        Critical value of the overturn ratio Ro. An overturn will be considered
-        noise if Ro < Roc.
+            Critical value of the overturn ratio Ro. An overturn will be considered
+            noise if Ro < Roc.
     background_eps : float, optional
-        Background epsilon where no overturn detected. Defaults to numpy.nan.
+            Background epsilon where no overturn detected. Defaults to numpy.nan.
     use_ip : bool, optional
-        Sets whether to use the intermediate profile method. Default is True. If True,
-        the dnoise parameter is passed as the `accuracy' argument of the intermediate
-        profile method.
+            Sets whether to use the intermediate profile method. Default is False. If True,
+            the dnoise parameter is passed as the `accuracy' argument of the intermediate
+            profile method.
     N2_method : string, optional
-        Method for calculation of buoyancy frequency. Default is 'teosp1'. Options are 'bulk',
-        'endpt', 'teos' and 'teosp1'.
+            Method for calculation of buoyancy frequency. Default is 'teosp1'. Options are 'bulk',
+            'endpt', 'teos' and 'teosp1'.
     overturns_from_CT : bool, optional
-        If true, overturning patches will be diagnosed from the conservative temperature CT,
-        instead of potential density. Default is False.
+            If true, overturning patches will be diagnosed from the conservative temperature CT,
+            instead of potential density. Default is False.
     return_diagnostics : bool, optional
-        Default is False. If True, this function will return a dictionary containing
-        variables such as the Thorpe scale Lt, etc.
+            Default is False. If True, this function will return a dictionary containing
+            variables such as the Thorpe scale Lt, etc.
 
     Returns
     -------
-    eps : array-like
-        Turbulent dissipation [W/kg]
-    N2 : array-like
-        Background stratification of each overturn detected [s^-2]
+    eps : ndarray
+            Turbulent dissipation [W/kg]
+    N2 : ndarray
+            Background stratification of each overturn detected [s^-2]
     diag : dict, optional
-        Dictionary of diagnositc variables, set return with the `return_diagnostics' argument.
+            Dictionary of diagnositc variables, set return with the `return_diagnostics' argument.
 
+    References
+    ----------
+    .. [1] Dillon, T. M. (1982). Vertical overturns: A comparison of Thorpe and Ozmidov length scales. Journal of Geophysical Research, 87(C12), 9601.
+    .. [2] Ferron, B., Mercier, H., Speer, K., Gargett, A., & Polzin, K. (1998). Mixing in the Romanche Fracture Zone. Journal of Physical Oceanography, 28(10), 1929–1945.
+    .. [3] Thorpe, S. A. (1977). Turbulence and Mixing in a Scottish Loch. Philosophical Transactions of the Royal Society of London. Series A, Mathematical and Physical Sciences, 286(1334), 125–181.
 
     """
     depth = np.asarray(depth)
@@ -167,6 +180,7 @@ def eps_overturn(
         "N2",
         "Lt",
         "thorpe_disp",
+        "sidx",
         "dens",
         "dens_sorted",
         "Ro",
@@ -211,23 +225,29 @@ def eps_overturn(
             q = dens
 
         if use_ip:  # Create intermediate density profile
-            q_ip = intermediate_profile(
+            q = intermediate_profile(
                 q, acc=dnoise, hinge=1000, kind="down"
             )  # TODO: make hinge optional
-            sidx, patches = find_overturns(
-                q_ip, combine_gap=0
-            )  # Also, combine gap should be a parameter...
-        else:
-            sidx, patches = find_overturns(q, combine_gap=0)
+
+        # --->> THORPE SCALES <<---
+        (
+            Lt,
+            thorpe_disp,
+            q_sorted,
+            noise_flag,
+            ends_flag,
+            Ro,
+            idx_patches,
+            sidx,
+        ) = thorpe_scale(depth, q, dnoise)
 
         # If there are no overturns, move on to the next pressure bin.
-        if not np.any(patches):
+        if not np.any(idx_patches):
             continue
 
-        # Thorpe displacements
-        thorpe_disp = depth[sidx] - depth
-
-        q_sorted = q[sidx]
+        # Thorpe displacements (by definition relative to initial locations, so unsorted)
+        unsidx = np.argsort(sidx)
+        thorpe_disp = (depth[sidx] - depth)[unsidx]
 
         # Sort other quantities based on the sorting indices.
         dens_sorted = dens[sidx]
@@ -235,28 +255,25 @@ def eps_overturn(
         CT_sorted = CT[sidx]
 
         # Temporary arrays.
-        Lt = np.full_like(depth, np.nan)
         N2 = np.full_like(depth, np.nan)
-        Ro = np.full_like(depth, np.nan)
-        noise_flag = np.full_like(depth, False, dtype=bool)
         N2_flag = np.full_like(depth, False, dtype=bool)
-        ends_flag = np.full_like(depth, False, dtype=bool)
         Ro_flag = np.full_like(depth, False, dtype=bool)
 
-        for patch in patches:
+        for patch in idx_patches:
             # Get patch indices.
             i0 = patch[0]
-            i1 = patch[1] + 1  # Need +1 for last point in overturn.
-            pidx = np.arange(i0, i1 + 1, 1)
+            i1 = patch[1]
+            pidx = np.arange(i0, i1 + 1, 1)  # Need +1 for Python indexing
 
-            # Thorpe scale is the root mean square thorpe displacement.
-            Lto = np.sqrt(np.mean(np.square(thorpe_disp[pidx])))
-            Lt[pidx] = Lto
+            Lto = np.unique(Lt[pidx])
 
             # Estimate the buoyancy frequency.
             if N2_method == "teos":
                 N2o, _ = gsw.Nsquared(
-                    SA_sorted[[i0, i1]], CT_sorted[[i0, i1]], p[[i0, i1]], lat,
+                    SA_sorted[[i0, i1]],
+                    CT_sorted[[i0, i1]],
+                    p[[i0, i1]],
+                    lat,
                 )
             elif N2_method == "teosp1":
                 # Go beyond overturn. Need to add 1 for this, unless end or beginning.
@@ -284,34 +301,13 @@ def eps_overturn(
 
             N2[pidx] = N2o
 
-            # Flag beginning or end.
-            if i0 == 0:
-                ends_flag[pidx] = True
-            if i1 == ndata - 1:
-                ends_flag[pidx] = True
-
-            # Flag small density or CT difference.
-            if not use_ip:
-                dq = q_sorted[i1] - q_sorted[i0]
-                if dq < dnoise:
-                    noise_flag[pidx] = True
-
             # Flag negative N squared.
             if N2o < 0:
                 N2_flag[pidx] = True
 
-            # Overturn ratio of Gargett & Garner
-            Tdo = thorpe_disp[pidx]
-            dzo = dz[pidx]
-            L_tot = np.sum(dzo)
-            L_neg = np.sum(dzo[Tdo < 0])
-            L_pos = np.sum(dzo[Tdo > 0])
-            Roo = np.minimum(L_neg / L_tot, L_pos / L_tot)
-            Ro[pidx] = Roo
-            # Don't raise flag if using intermediate profile because
-            # the method leads to sorting weirdness that messes with
-            # the overturn ratio.
-            if Roo < Roc and not use_ip:
+            Roo = np.unique(Ro[pidx])
+
+            if Roo < Roc:
                 Ro_flag[pidx] = True
 
         # Find and select data for this reference pressure range only.
@@ -328,16 +324,17 @@ def eps_overturn(
         diag["Lt"][inbin] = Lt[inbin]
         diag["Ro"][inbin] = Ro[inbin]
         diag["thorpe_disp"][inbin] = thorpe_disp[inbin]
+        diag["sidx"][inbin] = sidx[inbin]
         diag["dens"][inbin] = dens[inbin]
         diag["dens_sorted"][inbin] = dens_sorted[inbin]
         diag["CT_sorted"][inbin] = CT_sorted[inbin]
         diag["SA_sorted"][inbin] = SA_sorted[inbin]
 
         if use_ip and not overturns_from_CT:
-            diag["dens_ip"][inbin] = q_ip[inbin]
+            diag["dens_ip"][inbin] = q[inbin]
 
         if use_ip and overturns_from_CT:
-            diag["CT_ip"][inbin] = q_ip[inbin]
+            diag["CT_ip"][inbin] = q[inbin]
 
     # Finally calculate epsilon for diagnostics, avoid nans, inf and negative N2.
     isgood = np.isfinite(diag["N2"]) & np.isfinite(diag["Lt"]) & ~diag["N2_flag"]
@@ -361,30 +358,125 @@ def eps_overturn(
         return eps, N2
 
 
-def find_overturns(q, combine_gap=0):
-    """Find the indices of unstable patches.
+def thorpe_scale(depth, q, dnoise):
+    """
+    Estimate the Thorpe scale from unstable patches in a profile.
+
+    Parameters
+    ----------
+    depth : array-like
+            Depth [m] (negative if below sea surface)
+    q : array-like
+            Quantity from which Thorpe scales will be computed, e.g. density or temperature. If using
+            temperature, consider multiplying by -1 to get around the fact that temperature generally
+            decreases with depth.
+    dnoise : float, optional
+            Uncertainty or noise in q.
+
+    Returns
+    -------
+    Lt : ndarray
+            Thorpe scale [m]
+    thorpe_disp : ndarray
+            Thorpe displacement [m]
+    q_sorted : ndarray
+            q sorted to be monotonically increasing
+    noise_flag : ndarray
+            True if difference in q from top to bottom patch is less than dnoise
+    ends_flag : ndarray
+            True if a patch includes and end point
+    Ro : ndarray
+            Overturn ratio of Gargett & Garner.
+    idx_patches : ndarray
+            Indices of overturning patches, e.g. idx_patches[:, 0] are start indices and idx_patches[:, 1] are end indices.
+    idx_sorted : ndarray
+            Indices required to sort q so as to generate q_sorted.
+    """
+
+    depth = np.asarray(depth)
+    q = np.asarray(q)
+
+    if q[0] > q[-1]:
+        raise ValueError("The entire profile is unstable, q[0] > q[-1].")
+
+    if not np.all(np.isclose(np.maximum.accumulate(depth), depth)):
+        raise ValueError(
+            "It appears that depth is not monotonically increasing, please fix."
+        )
+
+    idx_sorted, idx_patches = find_overturns(q)
+
+    ndata = depth.size
+
+    # Thorpe displacements
+    thorpe_disp = depth[idx_sorted] - depth
+
+    q_sorted = q[idx_sorted]
+
+    # Initialise arrays.
+    Lt = np.full_like(depth, np.nan)
+    Ro = np.full_like(depth, np.nan)
+    noise_flag = np.full_like(depth, False, dtype=bool)
+    ends_flag = np.full_like(depth, False, dtype=bool)
+
+    dz = 0.5 * (depth[2:] - depth[:-2])  # 'width' of each data point
+    dz = np.hstack((dz[0], dz, dz[-1]))  # assume width of first and last data point
+
+    for patch in idx_patches:
+        # Get patch indices.
+        i0 = patch[0]
+        i1 = patch[1]
+        pidx = np.arange(i0, i1 + 1, 1)  # Need +1 for Python indexing
+
+        # Thorpe scale is the root mean square thorpe displacement.
+        Lto = np.sqrt(np.mean(np.square(thorpe_disp[pidx])))
+        Lt[pidx] = Lto
+
+        # Flag beginning or end.
+        if i0 == 0:
+            ends_flag[pidx] = True
+        if i1 == ndata - 1:
+            ends_flag[pidx] = True
+
+        # Flag small difference.
+        dq = q_sorted[i1] - q_sorted[i0]
+        if dq < dnoise:
+            noise_flag[pidx] = True
+
+        # Overturn ratio of Gargett & Garner
+        Tdo = thorpe_disp[pidx]
+        dzo = dz[pidx]
+        L_tot = np.sum(dzo)
+        L_neg = np.sum(dzo[Tdo < 0])
+        L_pos = np.sum(dzo[Tdo > 0])
+        Roo = np.minimum(L_neg / L_tot, L_pos / L_tot)
+        Ro[pidx] = Roo
+
+    return Lt, thorpe_disp, q_sorted, noise_flag, ends_flag, Ro, idx_patches, idx_sorted
+
+
+def find_overturns(q):
+    """Find the indices of unstable patches by cumulatively summing the difference between
+    sorted and unsorted indices of q.
 
     Parameters
     ----------
     q : array_like 1D
-        Profile of some quantity from which overturns can be detected
-        e.g. temperature or density.
-    combine_gap : float, optional
-        Combine overturns that are separated by less than a given number of points.
-        Default is 0.
+            Profile of some quantity from which overturns can be detected
+            e.g. temperature or density.
 
     Returns
     -------
-    idx_sorted : 1D numpy array
-        Indices that sort the data q.
-    idx_patches : (N, 2) numpy array
-        Start and end indices of the overturns.
+    idx_sorted : 1D ndarray
+            Indices that sort the data q.
+    idx_patches : (N, 2) ndarray
+            Start and end indices of the overturns.
 
     """
     idx = np.arange(q.size, dtype=int)
     idx_sorted = np.argsort(q, kind="mergesort")
     idx_cumulative = np.cumsum(idx_sorted - idx)
-    idx_patches = _consec_blocks(np.where(idx_cumulative > 0)[0], combine_gap)
+    idx_patches = contiguous_regions(idx_cumulative > 0)
     return idx_sorted, idx_patches
 
 
@@ -396,18 +488,18 @@ def intermediate_profile_topdown(q, acc, hinge):
     Parameters
     ----------
     q : array_like 1D
-        Profile of some quantity that the intermediate profile method can be
-        applied to e.g. temperature or density.
+            Profile of some quantity that the intermediate profile method can be
+            applied to e.g. temperature or density.
     acc : float, optional
-        Accuracy parameter. The intermediate profile change in steps of acc.
+            Accuracy parameter. The intermediate profile change in steps of acc.
     hinge : float, optional
-        Intermediate profile values are equal to the hinge plus an integer
-        multiple of acc. It should be kept constant across profiles.
+            Intermediate profile values are equal to the hinge plus an integer
+            multiple of acc. It should be kept constant across profiles.
 
     Returns
     -------
-    qi : 1D numpy array
-        Intermediate profile.
+    qi : 1D ndarray
+            Intermediate profile.
 
     """
 
@@ -432,22 +524,22 @@ def intermediate_profile(q, acc=5e-4, hinge=1000, kind="down"):
     Parameters
     ----------
     q : array_like 1D
-        Profile of some quantity that the intermediate profile method can be
-        applied to e.g. temperature or density.
+            Profile of some quantity that the intermediate profile method can be
+            applied to e.g. temperature or density.
     acc : float, optional
-        Accuracy parameter. The intermediate profile change in steps of acc.
+            Accuracy parameter. The intermediate profile change in steps of acc.
     hinge : float, optional
-        Intermediate profile values are equal to the hinge plus an integer multiple
-        of acc. It should be kept constant across profiles.
+            Intermediate profile values are equal to the hinge plus an integer multiple
+            of acc. It should be kept constant across profiles.
     kind : string, optional
-        Either 'up', 'down' or 'ave'. Default is ave. This argument determines
-        whether the method is applied top down (q[0] to q[end]), bottom up
-        (q[end] to [q[0]]) or the average of up and down.
+            Either 'up', 'down' or 'ave'. Default is ave. This argument determines
+            whether the method is applied top down (q[0] to q[end]), bottom up
+            (q[end] to [q[0]]) or the average of up and down.
 
     Returns
     -------
-    qi : 1D numpy array
-        Intermediate profile.
+    qi : 1D ndarray
+            Intermediate profile.
 
     """
 
@@ -470,60 +562,41 @@ def intermediate_profile(q, acc=5e-4, hinge=1000, kind="down"):
     return qi
 
 
-def _consec_blocks(idx=None, combine_gap=0, combine_run=0):
+def contiguous_regions(condition):
+    """Finds the indices of contiguous True regions in a boolean array.
+
+    Parameters
+    ----------
+    condition : array_like
+            Array of boolean values.
+
+    Returns
+    -------
+    idx : ndarray
+            Array of indices demarking the start and end of contiguous True regions in condition.
+            Shape is (N, 2) where N is the number of regions.
+
+    Notes
+    -----
+    Modified from stack overflow: https://stackoverflow.com/a/4495197
+
     """
-    block_idx = consec_blocks(idx,combine_gap=0, combine_run=0)
 
-    Routine that returns the start and end indexes of the consecutive blocks
-    of the index array (idx). The second argument combines consecutive blocks
-    together that are separated by <= combine. This is useful when you want
-    to perform some action on the n number of data points either side of a
-    gap, say, and don't want that action to be effected by a neighbouring
-    gap.
+    d = np.diff(condition)
+    (idx,) = d.nonzero()
 
-    From Glenn Carter, University of Hawaii
-    """
-    if idx.size == 0:
-        return np.array([])
+    # We need to start things after the change in "condition". Therefore,
+    # we'll shift the index by 1 to the right.
+    idx += 1
 
-    # Sort the index data and remove any identical points
-    idx = np.unique(idx)
+    if condition[0]:
+        # If the start of condition is True prepend a 0
+        idx = np.r_[0, idx]
 
-    # Find the block boundaries
-    didx = np.diff(idx)
-    ii = np.concatenate(((didx > 1).nonzero()[0], np.atleast_1d(idx.shape[0] - 1)))
+    if condition[-1]:
+        # If the end of condition is True, append the length of the array
+        idx = np.r_[idx, condition.size]  # Edit
 
-    # Create the block_idx array
-    block_idx = np.zeros((ii.shape[0], 2), dtype=int)
-    block_idx[0, :] = [idx[0], idx[ii[0]]]
-    for c in range(1, ii.shape[0]):
-        block_idx[c, 0] = idx[ii[c - 1] + 1]
-        block_idx[c, 1] = idx[ii[c]]
-
-    # Find the gap between and combine blocks that are closer together than
-    # the combine_gap threshold
-    gap = (block_idx[1:, 0] - block_idx[0:-1, 1]) - 1
-    if np.any(gap <= combine_gap):
-        count = 0
-        new_block = np.zeros(block_idx.shape, dtype=int)
-        new_block[0, 0] = block_idx[0, 0]
-        for ido in range(block_idx.shape[0] - 1):
-            if gap[ido] > combine_gap:
-                new_block[count, 1] = block_idx[ido, 1]
-                count += 1
-                new_block[count, 0] = block_idx[ido + 1, 0]
-        new_block[count, 1] = block_idx[-1, 1]
-        block_idx = new_block[: count + 1, :]
-
-    # Combine any runs that are shorter than the combine_run threshold
-    runlength = block_idx[:, 1] - block_idx[:, 0]
-    if np.any(runlength <= combine_run):
-        count = 0
-        new_block = np.zeros(block_idx.shape, dtype=int)
-        for ido in range(block_idx.shape[0]):
-            if runlength[ido] > combine_run:
-                new_block[count, :] = block_idx[ido, :]
-                count += 1
-        block_idx = new_block[:count, :]
-
-    return np.atleast_2d(block_idx)
+    # Reshape the result into two columns
+    idx.shape = (-1, 2)
+    return idx

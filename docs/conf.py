@@ -29,7 +29,7 @@ sys.path.insert(0, os.path.abspath(".."))
 
 # If your documentation needs a minimal Sphinx version, state it here.
 #
-# needs_sphinx = '1.0'
+# needs_sphinx = '1.3'
 
 # Add any Sphinx extension module names here, as strings. They can be
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom ones.
@@ -45,6 +45,8 @@ extensions = [
     "nbsphinx",
     "sphinx.ext.mathjax",
 ]
+
+bibtex_bibfiles = ["references.bib"]
 
 autosummary_generate = True
 autodoc_typehints = "none"
@@ -77,12 +79,12 @@ templates_path = ["_templates"]
 # source_suffix = ['.rst', '.md']
 source_suffix = ".rst"
 
-# The master toctree document.
-master_doc = "index"
+# The main toctree document.
+main_doc = "index"
 
 # General information about the project.
 project = "mixsea"
-copyright = "2020, mixsea Developers"
+copyright = "2021, mixsea Developers"
 author = "mixsea Developers"
 
 # The version info for the project you're documenting, acts as replacement
@@ -135,9 +137,10 @@ html_static_path = ["_static"]
 # fix api table width.
 # fix from https://rackerlabs.github.io/docs-rackspace/tools/rtd-tables.html
 
-html_context = {
-    "css_files": ["_static/theme_overrides.css"]  # override wide tables in RTD theme
-}
+# This was breaking all of my static html formatting, so I think this is the wrong way to do this
+# html_context = {
+#    "css_files": ["_static/theme_overrides.css"]  # override wide tables in RTD theme
+# }
 
 
 # -- Options for HTMLHelp output ---------------------------------------
@@ -167,7 +170,7 @@ latex_elements = {
 # (source start file, target name, title, author, documentclass
 # [howto, manual, or own class]).
 latex_documents = [
-    (master_doc, "mixsea.tex", "mixsea Documentation", "Gunnar Voet", "manual"),
+    (main_doc, "mixsea.tex", "mixsea Documentation", "Gunnar Voet", "manual"),
 ]
 
 
@@ -175,7 +178,7 @@ latex_documents = [
 
 # One entry per manual page. List of tuples
 # (source start file, name, description, authors, manual section).
-man_pages = [(master_doc, "mixsea", "mixsea Documentation", [author], 1)]
+man_pages = [(main_doc, "mixsea", "mixsea Documentation", [author], 1)]
 
 
 # -- Options for Texinfo output ----------------------------------------
@@ -185,7 +188,7 @@ man_pages = [(master_doc, "mixsea", "mixsea Documentation", [author], 1)]
 #  dir menu entry, description, category)
 texinfo_documents = [
     (
-        master_doc,
+        main_doc,
         "mixsea",
         "mixsea Documentation",
         author,

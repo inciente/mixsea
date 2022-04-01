@@ -42,7 +42,7 @@ report will allow others to reproduce the bug and provide insight into fixing. S
 `this stackoverflow article <https://stackoverflow.com/help/mcve>`_ for tips on
 writing a good bug report.
 
-Trying the bug-producing code out on the *master* branch is often a worthwhile exercise
+Trying the bug-producing code out on the *main* branch is often a worthwhile exercise
 to confirm the bug still exists. It is also worth searching existing bug reports and
 pull requests to see if the issue has already been reported and/or fixed.
 
@@ -185,7 +185,7 @@ See the full conda docs `here <http://conda.pydata.org/docs>`__.
 Creating a branch
 -----------------
 
-You want your master branch to reflect only production-ready code, so create a
+You want your main branch to reflect only production-ready code, so create a
 feature branch for making your changes. For example::
 
     git branch shiny-new-feature
@@ -200,12 +200,12 @@ changes in this branch specific to one bug or feature so it is clear
 what the branch brings to *mixsea*. You can have many "shiny-new-features"
 and switch in between them using the ``git checkout`` command.
 
-To update this branch, you need to retrieve the changes from the master branch::
+To update this branch, you need to retrieve the changes from the main branch::
 
     git fetch upstream
-    git rebase upstream/master
+    git rebase upstream/main
 
-This will replay your commits on top of the latest *mixsea* git master.  If this
+This will replay your commits on top of the latest *mixsea* git main.  If this
 leads to merge conflicts, you must resolve these before submitting your pull
 request.  If you have uncommitted changes, you will need to ``git stash`` them
 prior to updating.  This will effectively store your changes and they can be
@@ -236,7 +236,7 @@ Some other important things to know about the docs:
 - The docstrings follow the **Numpy Docstring Standard**, which is used widely
   in the Scientific Python community. This standard specifies the format of
   the different sections of the docstring. See `this document
-  <https://github.com/numpy/numpy/blob/master/doc/HOWTO_DOCUMENT.rst.txt>`_
+  <https://github.com/numpy/numpy/blob/main/doc/HOWTO_DOCUMENT.rst.txt>`_
   for a detailed explanation, or look at some of the existing functions to
   extend it in a similar manner.
 
@@ -261,12 +261,9 @@ Some other important things to know about the docs:
   doc build. This approach means that code examples will always be up to date,
   but it does make the doc building a bit more complex
 
-..  - Our API documentation in ``doc/api.rst`` houses the auto-generated
-  documentation from the docstrings. For classes, there are a few subtleties
-  around controlling which methods and attributes have pages auto-generated.
+- The documentation includes jupyer notebooks via the `nbsphinx <https://nbsphinx.readthedocs.io>`__ exension. Make sure to clean all notebook output before adding and committing changes, this removes any images and other output and makes diffs much more easy to read.
 
-..  Every method should be included in a ``toctree`` in ``api.rst``, else Sphinx
-  will emit a warning.
+- Our API documentation in ``doc/api.rst`` houses the auto-generated documentation from the docstrings. Every method should be included in ``api.rst``, else Sphinx will emit a warning.
 
 
 Building the documentation
@@ -594,7 +591,7 @@ double check your branch changes against the branch it was based on:
 #. Navigate to your repository on GitHub -- https://github.com/your-user-name/mixsea
 #. Click on ``Branches``
 #. Click on the ``Compare`` button for your feature branch
-#. Select the ``base`` and ``compare`` branches, if necessary. This will be ``master`` and
+#. Select the ``base`` and ``compare`` branches, if necessary. This will be ``main`` and
    ``shiny-new-feature``, respectively.
 
 Finally, make the pull request
@@ -602,8 +599,8 @@ Finally, make the pull request
 
 If everything looks good, you are ready to make a pull request.  A pull request is how
 code from a local repository becomes available to the GitHub community and can be looked
-at and eventually merged into the master version.  This pull request and its associated
-changes will eventually be committed to the master branch and available in the next
+at and eventually merged into the main version.  This pull request and its associated
+changes will eventually be committed to the main branch and available in the next
 release.  To submit a pull request:
 
 #. Navigate to your repository on GitHub
@@ -628,12 +625,12 @@ Delete your merged branch (optional)
 ------------------------------------
 
 Once your feature branch is accepted into upstream, you'll probably want to get rid of
-the branch. First, merge upstream master into your branch so git knows it is safe to
+the branch. First, merge upstream main into your branch so git knows it is safe to
 delete your branch::
 
     git fetch upstream
-    git checkout master
-    git merge upstream/master
+    git checkout main
+    git merge upstream/main
 
 Then you can do::
 

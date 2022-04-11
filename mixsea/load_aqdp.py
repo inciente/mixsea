@@ -12,7 +12,7 @@ import scipy.signal as signal
 sys.path.append('/mnt/sda1/PhysOc/modview/modview');
 import timetools, loader, mapper
 sys.path.append('/mnt/sda1/PhysOc/mixsea/mixsea');
-import aqdpturb
+#iimport aqdpturb
 
 ''' DATA IMPORTING AND PREPROCESSING FUNCTIONS '''
 data_dir = '/mnt/sda1/SciData/TTIDE/McLane/'
@@ -144,7 +144,7 @@ class Ensembles:
         return ind_start, ind_stop
 
     def remove_empty_ensembles(self):
-        has_data = (self.ind_stop - self.ind_start) != 0;
+        has_data = (self.ind_stop - self.ind_start) > 2;
         self.timenum = self.timenum[has_data]; 
         self.time = self.time[has_data]; 
         self.ind_start = self.ind_start[has_data]; 
@@ -312,17 +312,28 @@ class Veron(TurbMethod):
             cost -= np.log( (degfred/psi_theory[kk]) * DIST ); 
         return cost
     
+class vehicle_motion:
+    def __init__(self, ensemble):
+        self.data = ensemble.raw;
+        self.ens = ensemble; 
+    
+    def vertical_velocity(self, index):
+        p0 = self.data.pressure[ self.ens.ind_start[index] ]; 
+        p1 = self.data.pressure[ self.ens.ind_stop[index] ]; 
+        # need to compute dp/dt
+        dp = p1 - p0; 
+        dt = pd.to_datetime( p1.time.values ) - pd.to_datetime( p0.time.values );
+        dpdt = dp/dt.total_seconds();
+        return -dpdt
+    
 
-
-                    
-# ------------- TURBULENCE ESTIMATES
-def make_ensemble(dt=30):
-    # dt given in seconds
-    dt_days = dt/60/60/24;
-
-    slow_time = make_slowtime(raw_dat['yday'],dt_days); 
-    ens = aqdpturb.Ensemble( slow_time, dt_days, raw_dat, beam='v1') 
-    return ens
+    def find_member(self, xr_obj, index):
+        find_ensemble = slice( self.ens.ind_start[index], self.ens.ind_stop[index] ); 
+        if len(xr_obj.dims) == 2:
+            xr_obj = xr_obj[find_ensemble,:]; 
+        else:
+            xr_obj = xr_obj[find_ensemble]; 
+        return xr_obj
 ''' 
 BELOW IS A SET OF FUNCTIONS THAT EXECUTE PLOTTING SUBROUTINES
 FIGURES ARE DEFINED AS INSTANCES OF MODVIEW.VIZTOOLS.PANEL_PLOT class.
@@ -359,14 +370,3 @@ def make_uv_aqdp():
 
     u_plot = make_pcolor( fig.axes[0], 'u', limits, u_settings);
 
-def spectrum_obs(ax, veron_obj, index, color='blue'):
-    phi_obs = veron_obj.wavenumber_spectra(index);
-    phi_line = ax.loglog( veron_obj.wvnums, phi_obs ,color='black',
-            label=r'$\Phi_{obs}(t_{index})$');
-    return phi_line
-
-def spectrum_theory(ax, veron_obj, eps_value, color='black'):
-    phi_th = veron_obj.phi_theory(eps_value); 
-    phi_line = ax.loglog( veron_obj.wvnums, phi_th, color='black', 
-            label=r'$\Phi_{th}(\varepsilon=$' + str(eps_value) +')');
-    return

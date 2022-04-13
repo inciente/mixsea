@@ -55,7 +55,7 @@ def cut_raw_dat(v_df, limits):
     return data
 
 def format_e(n):
-    a = '%.2E' % Decimal(n)
+    a = '%.1E' % Decimal(n)
     return a
 
 # --------------- GIVE FORMAT TO DATA 
@@ -203,11 +203,11 @@ class TurbMethod(ABC):
         obs_curve = self.observations_curve(index);
         degfred = obs_curve.shape[0]; # number of profiles used
         obs_curve = np.mean( obs_curve, axis=0 ); # ensemble average
-        # now optimize - minimize doesn't work well with veron. will try global method
-        #optimal = minimize( fun=self.cost_function, x0=[1e-7,self.noise_guess],
-        #                args=(obs_curve,degfred), bounds=[(1e-10,1e-4),(0,5e-4)] );
-        optimal = differential_evolution( func=self.cost_function, 
-                bounds=[(1e-11,1e-4),(0,5e-4)], args=(obs_curve, degfred));
+        # find parameters that minimize cost function
+        optimal = differential_evolution( \
+                func=self.cost_function, 
+                bounds=[(1e-11,1e-4),(0,5e-4)], 
+                args=(obs_curve, degfred));
         if optimal.success:
             parameters = optimal.x
         else:
@@ -223,17 +223,22 @@ class TurbMethod(ABC):
         ens_date = self.ensembles.time[index].strftime('%d %b %H:%M');
         eps_string = format_e( parameters[0] );
         if hasattr(self, 'wvnums'):
-            linobs, = ax.loglog( self.wvnums, observ, linewidth=2, color=colors[0],
-                label=r'$\langle \psi \rangle_{ens}$ on '+ens_date);
-            linth, = ax.loglog( self.wvnums, theory, linewidth=1.5, color=colors[1],
-                label=r'$\Psi$ for $\varepsilon=$'+eps_string+' W kg$^{-1}$');
+            linobs, = ax.loglog( self.wvnums, observ, 
+                    linewidth=2, color=colors[0],
+                label=r'$\langle \psi \rangle_{ens}$');
+            linth, = ax.loglog( self.wvnums, 
+                    theory, linewidth=1.5, color=colors[1],
+                    label=r'$\Psi$ for $\varepsilon=$'+eps_string);
             ax.set_xlabel('Wavenumber $k$ [cpm]'); 
-            ax.set_ylabel(r'Power spectral density [m$^{3}$ s$^{-2}$]')
+            ax.set_ylabel(r'PSD [m$^{3}$ s$^{-2}$]')
         elif hasattr(self, 'l_fit'):
-            linobs, = ax.plot( self.l_fit, 1e4*observ, linewidth=2, color=colors[0], 
-                label=r'$\langle \lambda_2 \rangle_{ens}$ on ' + ens_date);
-            linth, = ax.plot( self.l_fit, 1e4*theory, linewidth=1.5, color=colors[1],
-                label=r'$\Lambda_{2}$ for $\varepsilon=$'+eps_string+' W kg$^{-1}$');
+            linobs, = ax.plot( self.l_fit, 
+                    1e4*observ, linewidth=2, color=colors[0], 
+                label=r'$\langle \Lambda \rangle_{ens}$ obs');
+            linth, = ax.plot( self.l_fit, 
+                1e4*theory, linewidth=1.5, color=colors[1],
+                label=r'$\Lambda_{2}$ for $\varepsilon=$'\
+                        +eps_string);
             ax.set_xlabel('Separation $r$ [m]'); 
             ax.set_ylabel('Variance [10$^{-4}$ m$^2$ s$^{-2}$]'); 
         return linobs, linth
@@ -245,7 +250,7 @@ class Wiles(TurbMethod):
         # now set properties specific to this TurbMethod
         self.dl = dl_aqdp; 
         self.l = np.arange(1,self.nbins+1,1)*self.dl
-        self.fit_range = [6,26]; # range over which fit is performed
+        self.fit_range = [4,20]; # range over which fit is performed
         self.l_fit = self.l[self.fit_range[0]:(self.fit_range[1]+1)];
         print('The fitting range for the structure function method is '\
                 + str(np.array(self.fit_range)*self.dl) + ' meters');
@@ -305,10 +310,12 @@ class Veron(TurbMethod):
         return psi_theory
     
     def cost_function(self, parameters, obs_curve, degfred):
-        cost = 0; # compare observaations and theory at all wavenumbers
-        psi_theory = self.theory_curve(parameters[0], parameters[1]);
+        cost = 0; # obs vs theory at all wavenumbers
+        psi_theory = self.theory_curve( \
+                parameters[0], parameters[1]);
         for kk in range(len(obs_curve)-2):
-            DIST = chi2.pdf( degfred * obs_curve[kk] / psi_theory[kk], df=degfred)
+            DIST = chi2.pdf( degfred * obs_curve[kk] \
+                    / psi_theory[kk], df=degfred)
             cost -= np.log( (degfred/psi_theory[kk]) * DIST ); 
         return cost
     

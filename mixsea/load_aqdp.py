@@ -333,9 +333,31 @@ class vehicle_motion:
         dpdt = dp/dt.total_seconds();
         return -dpdt
     
+    def get_orientation( self, index, func = None, unwrap = True ):
+        # Get indicators of how much the instrument shakes
+        # using 3 variables: roll, hdg, and pitch.
+        variables = ['roll','hdg','pitch']; 
+        # dictionary with lists to store data in them
+        orientation = dict(); 
+        orientation['unwrap'] = unwrap; # to keep track
+        orientation['func'] = func;
+        for jj in range(len(variables)):
+            # get variables one by one
+            key = variables[jj]; 
+            data = self.find_member( self.data[key], index ); 
+            if variables[jj] == 'hdg' and unwrap:
+                # unwrap to avoid artificially high variance
+                data = np.unwrap( data/180*np.pi ) * 180 / np.pi;
+            # --- if necessary, apply function to the data
+            if func is not None:
+                data = func( data );
+            orientation[ key ] = data; # save in dictionary
+        return orientation
+
 
     def find_member(self, xr_obj, index):
-        find_ensemble = slice( self.ens.ind_start[index], self.ens.ind_stop[index] ); 
+        find_ensemble = slice( self.ens.ind_start[index], 
+                self.ens.ind_stop[index] ); 
         if len(xr_obj.dims) == 2:
             xr_obj = xr_obj[find_ensemble,:]; 
         else:

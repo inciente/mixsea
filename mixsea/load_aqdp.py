@@ -207,7 +207,8 @@ class TurbMethod(ABC):
         optimal = differential_evolution( \
                 func=self.cost_function, 
                 bounds=[(1e-11,1e-4),(0,5e-4)], 
-                args=(obs_curve, degfred));
+                args=(obs_curve, degfred),
+                popsize=6, maxiter=45 );
         if optimal.success:
             parameters = optimal.x
         else:
@@ -256,7 +257,8 @@ class Wiles(TurbMethod):
                 + str(np.array(self.fit_range)*self.dl) + ' meters');
 
     def observations_curve(self, index):
-        vels = self.ensembles.see_member(index, self.beam, clean=True);
+        vels = self.ensembles.see_member(index, 
+                             self.beam, clean=True);
         if self.detrend:
             vels = signal.detrend(vels, axis=1); 
             # This must be turned into an xr.DataArray if not already

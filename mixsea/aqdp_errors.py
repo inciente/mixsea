@@ -3,7 +3,7 @@ import os, sys, importlib, random;
 import pandas as pd; 
 #from parfor import parfor
 import load_aqdp;
-
+from datetime import datetime, timedelta
 
 
 def make_table(turb_method, indices):
@@ -56,4 +56,51 @@ def unpack_orientation( motion, index, lists, func = None ):
     return lists
 
 
+# ---------- functions useful for gridding
+def date_to_num( datelist ):
+    basetime = datetime(2000,1,1,0,0,0); 
+    datenums = [ (jj - basetime).total_seconds() / 3600 for jj in datelist ]; 
+    return datenums
 
+def make_t_axis( table, dt = 1 ):
+    #dt is in hours
+    t_0 = np.min( table['time'] ); 
+    t_end = np.max( table['time'] ); 
+    tnums = date_to_num( [t_0, t_end] ); 
+    timevec = np.arange( np.floor( tnums[0] ), np.ceil( tnums[1] ), dt ); 
+    return timevec
+
+def find_in_grid( table, t_axis, z_axis ):
+    # get soace-time location of rows in table
+    timenum = date_to_num( table['time'] ); 
+    depth = table['depth']; 
+    # find which "bin" each measurement belongs in
+    t_index = np.digitize( timenum, t_axis ); 
+    z_index = np.digitize( depth, z_axis ); 
+    return t_index, z_index
+
+def grid_var( table, var ):
+    # set edges of grid
+    dz = 25; dt = 2; # meters and hours
+    z_axis = np.arange( 850, 1150, dz ); 
+    t_axis = make_t_axis( table, dt = dt ); 
+    # find data within the grid
+    t_ind, z_ind = find_in_grid( table, t_axis, z_axis ); 
+    # create empty grid for new variable 
+    gridded_var = np.zeros( [ len(z_axis)-1 , len(t_axis)-1 ] ); 
+    gridded_var[gridded_var == 0] = np.nan; 
+
+    for tt in range( 1, len(t_axis) ):
+        rows_now = (t_ind == tt); 
+        for zz in range( 1, len(z_axis)):
+            rows_depth = (z_ind == zz ); 
+            rows_cell = rows_now * rows_depth; # data from right time and depth
+            vals_use = table[var][rows_cell] # isolate data
+            gridded_var[ zz-1, tt-1 ] = np.nanmean( vals_use ); # save in grid
+    # resize t, z, axes for plotting 
+    t_axis = t_axis[1,:] - dt/2;
+    z_axis = z_axis[1,:] - dt/2;
+    return gridded_var, t_axis, z_axis
+
+
+            

@@ -104,14 +104,14 @@ def build_grid():
 
 # ------------- SECONDARY COMPUTATIONS ON GRIDDED DATA
 def shear_squared( grid_dat ):
-    sh2 = grid_dat['u'].differentiate(coord=pressure)**2 \
-            + grid_dat['v'].differentiate(coord=pressure)**2;
+    sh2 = grid_dat['u'].differentiate(coord= 'pressure')**2 \
+            + grid_dat['v'].differentiate(coord= 'pressure')**2;
     return sh2
 
 def N_squared( grid_dat ):
     rho = gsw.rho( grid_dat['s'], grid_dat['th'],
             grid_dat['u'].pressure );
-    N2 = (9.81 / 1024 ) * rho.differentiate( coord = pressure ); 
+    N2 = (9.81 / 1024 ) * rho.differentiate( coord = 'pressure' ); 
     return N2 
 
 def richardson_number( grid_dat ):

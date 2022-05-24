@@ -94,7 +94,8 @@ def build_grid():
     grid_dat = grid_file.read_struct('MPall',grid_vars); 
     # there are nans in the time vector, so we find those
     valid_time = ~np.isnan(grid_dat['yday'][0]);
-    grid_dat['time'] = datetime_from_yday(2013,grid_dat['yday'][0][valid_time]);
+    grid_dat['time'] = datetime_from_yday( data_year ,
+            grid_dat['yday'][0][valid_time]);
     grid_dat = grid_to_xr(grid_dat, ['u','v','th','s']);    
     return grid_dat
 
@@ -102,10 +103,20 @@ def build_grid():
 #raw_dat = build_raw(); 
 
 # ------------- SECONDARY COMPUTATIONS ON GRIDDED DATA
-def shear_squared():
+def shear_squared( grid_dat ):
     sh2 = grid_dat['u'].differentiate(coord=pressure)**2 \
             + grid_dat['v'].differentiate(coord=pressure)**2;
     return sh2
+
+def N_squared( grid_dat ):
+    rho = gsw.rho( grid_dat['s'], grid_dat['th'],
+            grid_dat['u'].pressure );
+    N2 = (9.81 / 1024 ) * rho.differentiate( coord = pressure ); 
+    return N2 
+
+def richardson_number( grid_dat ):
+    Ri = N_squared( grid_dat ) / shear_squared( grid_dat );
+    return Ri
 
 class Ensembles:
     ''' This class takes in a dt, the raw aqdp data, creates a slow time with that

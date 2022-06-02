@@ -36,12 +36,14 @@ def grid_to_xr(grid_dict, varlist):
     valid_time = ~np.isnan(grid_dict['yday'][0]);
     p = np.squeeze( grid_dict['p']); 
     time = grid_dict['time']; 
+    grid_xr = xr.Dataset() 
     for kk in varlist:
-        grid_dict[kk] = xr.DataArray(data=grid_dict[kk][:,valid_time], 
+        grid_xr[kk] = xr.DataArray(data=grid_dict[kk][:,valid_time], 
                 dims=('pressure','time'),
                 coords={'pressure':('pressure',p),
                     'time':('time',time)});
-    return grid_dict
+    
+    return grid_xr
 
 def cut_grid_var(data,limits):
     # To be used with xarray objects
